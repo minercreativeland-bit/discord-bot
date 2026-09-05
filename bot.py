@@ -61,6 +61,101 @@ def save_data(data):
     json.dump(data, f, indent=4)
 
 
+# --- Verification System UI Components ---
+verification_codes = {}
+
+
+class VerifyModal(discord.ui.Modal, title='Account Verification'):
+  code_input = discord.ui.TextInput(
+      label='Enter Verification Code',
+      placeholder='Type the 4-digit code sent to your DMs',
+      min_length=4,
+      max_length=4,
+  )
+
+  async def on_submit(self, interaction: discord.Interaction):
+    user_id = interaction.user.id
+    entered_code = self.code_input.value.strip()
+
+    if (
+        user_id not in verification_codes
+        or verification_codes[user_id] != entered_code
+    ):
+      await interaction.response.send_message(
+          '❌ **Incorrect Code:** Please click "Generate Code" first and check'
+          ' your DMs.',
+          ephemeral=True,
+      )
+      return
+
+    role = discord.utils.get(interaction.guild.roles, name='Verified')
+    if not role:
+      await interaction.response.send_message(
+          "❌ **Setup Error:** The 'Verified' role does not exist on this"
+          ' server. Ask an admin to create it!',
+          ephemeral=True,
+      )
+      return
+
+    try:
+      await interaction.user.add_roles(role)
+      del verification_codes[user_id]
+      await interaction.response.send_message(
+          '✅ **Success!** You have been verified and given the **Verified**'
+          ' role.',
+          ephemeral=True,
+      )
+    except discord.Forbidden:
+      await interaction.response.send_message(
+          '❌ **Permission Error:** I cannot assign roles. Make sure my bot'
+          ' role is placed *above* the Verified role in server settings.',
+          ephemeral=True,
+      )
+
+
+class VerifyView(discord.ui.View):
+
+  def __init__(self):
+    super().__init__(timeout=None)
+
+  @discord.ui.button(
+      label='Generate Code',
+      style=discord.ButtonStyle.primary,
+      custom_id='gen_code_btn',
+  )
+  async def generate_code(
+      self, interaction: discord.Interaction, button: discord.ui.Button
+  ):
+    code = str(random.randint(1000, 9999))
+    verification_codes[interaction.user.id] = code
+
+    try:
+      await interaction.user.send(
+          f'🔐 Your Discord verification code is: **{code}**\nReturn to the'
+          ' server and click **Verify** to enter it.'
+      )
+      await interaction.response.send_message(
+          '📬 I have sent your verification code via **Direct Message (DM)**!',
+          ephemeral=True,
+      )
+    except discord.Forbidden:
+      await interaction.response.send_message(
+          '❌ **DM Blocked:** I could not send you a DM. Please enable DMs from'
+          ' server members in your privacy settings and try again.',
+          ephemeral=True,
+      )
+
+  @discord.ui.button(
+      label='Verify',
+      style=discord.ButtonStyle.success,
+      custom_id='verify_modal_btn',
+  )
+  async def verify_button(
+      self, interaction: discord.Interaction, button: discord.ui.Button
+  ):
+    await interaction.response.send_modal(VerifyModal())
+
+
 @client.event
 async def on_ready():
   print(f'Success! Logged in as {client.user}')
@@ -106,6 +201,7 @@ async def on_message(message):
         value=(
             '`!ping` — Checks bot latency\n'
             '`!say <msg>` — Broadcasts a message (Admin Only)\n'
+            '`!linksetup` — Posts the verification panel (Admin Only)\n'
             '`!cmds` — Displays this command list'
         ),
         inline=False,
@@ -280,6 +376,36 @@ async def on_message(message):
       pass
 
     await message.channel.send(text_to_say)
+
+  # 8. Setup Verification Panel (Admin Only)
+  elif msg == '!linksetup':
+    if not message.author.guild_permissions.administrator:
+      await message.channel.send(
+          '❌ **Access Denied:** You must be an administrator to post the'
+          ' verification panel.'
+      )
+      return
+
+    try:
+      await message.delete()
+    except discord.Forbidden:
+      pass
+
+    embed = discord.Embed(
+        title='🛡️ Server Verification',
+        description=(
+            'Welcome! To gain access to the rest of the server, you must'
+            ' complete verification.\n\n'
+            '**Step 1:** Click **Generate Code** to receive a code in your'
+            ' DMs.\n**Step 2:** Click **Verify** and enter your 4-digit code.'
+        ),
+        color=discord.Color.blue(),
+    )
+    embed.set_footer(
+        text='Make sure your direct messages are open for this server!'
+    )
+
+    await message.channel.send(embed=embed, view=VerifyView())
 
 
 if __name__ == '__main__':
