@@ -158,6 +158,8 @@ class VerifyView(discord.ui.View):
 
 @client.event
 async def on_ready():
+  # Register the persistent view so buttons work permanently across boots
+  client.add_view(VerifyView())
   print(f'Success! Logged in as {client.user}')
 
 
