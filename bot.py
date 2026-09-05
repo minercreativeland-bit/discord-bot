@@ -102,9 +102,10 @@ async def on_message(message):
         inline=False,
     )
     embed.add_field(
-        name='🛠️ System',
+        name='🛠️ System & Admin',
         value=(
             '`!ping` — Checks bot latency\n'
+            '`!say <msg>` — Broadcasts a message (Admin Only)\n'
             '`!cmds` — Displays this command list'
         ),
         inline=False,
@@ -253,6 +254,32 @@ async def on_message(message):
       await message.channel.send(
           "❌ Unknown game. Use `fn` for Fortnite or `dbd` for Dead by Daylight."
       )
+
+  # 7. Admin-Only Say Command
+  elif msg == '!say' or msg.startswith('!say '):
+    if not message.author.guild_permissions.administrator:
+      await message.channel.send(
+          '❌ **Access Denied:** You must be a server administrator to use this'
+          ' command!'
+      )
+      return
+
+    parts = message.content.split(' ', 1)
+    if len(parts) < 2 or not parts[1].strip():
+      await message.channel.send(
+          '❌ **Usage Error:** Please provide text! Example: `!say Hello'
+          ' everyone!`'
+      )
+      return
+
+    text_to_say = parts[1]
+
+    try:
+      await message.delete()
+    except discord.Forbidden:
+      pass
+
+    await message.channel.send(text_to_say)
 
 
 if __name__ == '__main__':
