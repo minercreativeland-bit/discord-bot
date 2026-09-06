@@ -16,7 +16,12 @@ def home():
 
 
 def run_web():
-  app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+  app.run(
+      host='0.0.0.0',
+      port=int(os.environ.get('PORT', 8080)),
+      debug=False,
+      use_reloader=False,
+  )
 
 
 def keep_alive():
@@ -37,28 +42,40 @@ client = discord.Client(intents=intents)
 DATA_FILE = 'streaks.json'
 
 
-def load_data():
-  if os.path.exists(DATA_FILE):
-    with open(DATA_FILE, 'r') as f:
-      data = json.load(f)
-      for game in ['fortnite', 'dbd']:
-        if game not in data:
-          data[game] = {'streak': 0, 'best': 0, 'wins': 0, 'losses': 0}
-        else:
-          data[game].setdefault('streak', 0)
-          data[game].setdefault('best', 0)
-          data[game].setdefault('wins', 0)
-          data[game].setdefault('losses', 0)
-      return data
+def default_data():
   return {
       'fortnite': {'streak': 0, 'best': 0, 'wins': 0, 'losses': 0},
       'dbd': {'streak': 0, 'best': 0, 'wins': 0, 'losses': 0},
   }
 
 
+def load_data():
+  if not os.path.exists(DATA_FILE):
+    return default_data()
+
+  try:
+    with open(DATA_FILE, 'r', encoding='utf-8') as f:
+      data = json.load(f)
+  except (json.JSONDecodeError, OSError):
+    data = default_data()
+
+  for game in ['fortnite', 'dbd']:
+    if not isinstance(data.get(game), dict):
+      data[game] = {}
+    data[game].setdefault('streak', 0)
+    data[game].setdefault('best', 0)
+    data[game].setdefault('wins', 0)
+    data[game].setdefault('losses', 0)
+
+  return data
+
+
 def save_data(data):
-  with open(DATA_FILE, 'w') as f:
-    json.dump(data, f, indent=4)
+  try:
+    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+      json.dump(data, f, indent=4)
+  except OSError as exc:
+    print(f'Could not save {DATA_FILE}: {exc}')
 
 
 # --- Verification System UI Components ---
@@ -84,6 +101,13 @@ class VerifyModal(discord.ui.Modal, title='Account Verification'):
       await interaction.response.send_message(
           '❌ **Incorrect Code:** Please click "Generate Code" first and check'
           ' your DMs.',
+          ephemeral=True,
+      )
+      return
+
+    if interaction.guild is None:
+      await interaction.response.send_message(
+          '❌ Verification can only be completed inside a server.',
           ephemeral=True,
       )
       return
@@ -156,11 +180,19 @@ class VerifyView(discord.ui.View):
     await interaction.response.send_modal(VerifyModal())
 
 
+view_registered = False
+
+
 @client.event
 async def on_ready():
-  # Register the persistent view so buttons work permanently across boots
-  client.add_view(VerifyView())
-  print(f'Success! Logged in as {client.user}')
+  global view_registered
+
+  # Persistent views only need to be registered once per process.
+  if not view_registered:
+    client.add_view(VerifyView())
+    view_registered = True
+
+  print(f'Success! Logged in as {client.user} (ID: {client.user.id})')
 
 
 @client.event
